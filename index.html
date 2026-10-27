@@ -21,7 +21,7 @@
   <div id="result" class="card hidden"></div>
 </main>
 <script type="module">
-import { db, STYLE, normalizeNic, hashNic } from "./common.js";
+import { db, STYLE, START_NO, normalizeNic, hashNic } from "./common.js";
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 document.getElementById("st").textContent = STYLE;
 
@@ -44,14 +44,17 @@ async function check() {
     if (idx === -1) {
       r.innerHTML = "<p>මෙම NIC අංකය වර්තමාන පොරොත්තු ලේඛනයේ නොමැත.</p><p class='muted'>ඔබ තවමත් ලේඛනයට ඇතුළත් කර නැත්නම්, හෝ ණය ලබා දී ඇත්නම් මෙසේ පෙනේ. වැඩි විස්තර සඳහා ප්‍රාදේශීය ලේකම් කාර්යාලය අමතන්න.</p>";
     } else {
-      const pos = idx + 1;
+      const pos = START_NO + idx;
       r.innerHTML = `<p class="muted" style="margin:0">ඔබේ ස්ථානය</p><p class="big">${pos}</p><p>මුළු පොරොත්තු ලේඛනයේ ${items.length} දෙනෙකු අතරින්.</p>`;
+      if (items[idx].remark) {
+        const rm = document.createElement("p"); rm.className = "msg ok"; rm.textContent = "රිමාක්: " + items[idx].remark; r.appendChild(rm);
+      }
       if (idx === 0) {
         const p = document.createElement("p"); p.textContent = "ඔබ ලේඛනයේ පළමු ස්ථානයේ සිටී."; r.appendChild(p);
       } else {
         const t = document.createElement("p"); t.innerHTML = `<b>ඔබට ඉදිරියෙන් සිටින ${idx} දෙනා:</b>`; r.appendChild(t);
-        const ol = document.createElement("ol"); ol.className = "names";
-        items.slice(0, idx).forEach(i => { const li = document.createElement("li"); li.textContent = i.name; ol.appendChild(li); });
+        const ol = document.createElement("ol"); ol.className = "names"; ol.start = START_NO;
+        items.slice(0, idx).forEach(i => { const li = document.createElement("li"); li.textContent = i.name; if (i.remark) { const s = document.createElement("span"); s.className = "muted"; s.textContent = " — " + i.remark; li.appendChild(s); } ol.appendChild(li); });
         r.appendChild(ol);
       }
     }
