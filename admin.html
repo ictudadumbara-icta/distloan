@@ -31,7 +31,9 @@
       </div>
       <input id="newNic" placeholder="NIC අංකය" autocomplete="off">
       <input id="newName" placeholder="සම්පූර්ණ නම" autocomplete="off">
+      <input id="newPosition" placeholder="තනතුර" autocomplete="off">
       <input id="newPhone" placeholder="දුරකථන (අවශ්‍ය නම්)" autocomplete="off">
+      <input id="newRemark" placeholder="ප්‍රමුඛතා රිමාක් (අවශ්‍ය නම්) - මෙය පොදු පිටුවේත් පෙනේ" autocomplete="off">
       <button id="addBtn">එකතු කරන්න</button>
       <div id="addMsg"></div>
       <div id="qrBox" class="hidden" style="margin-top:14px;text-align:center">
@@ -52,13 +54,14 @@
         <button id="bulkBtn" class="small">ණය දුන්නා ලෙස සලකුණු කරන්න</button>
       </div>
       <div style="overflow-x:auto"><table id="tbl"></table></div>
+      <p class="muted">රිමාක් කොටුවේ ලියා Enter ඔබන්න (හෝ පිටතට click කරන්න). පොරොත්තු ලේඛනයේ රිමාක් පොදු පිටුවේත් පෙනේ.</p>
       <div id="listMsg"></div>
     </div>
   </div>
 </main>
 
 <script type="module">
-import { app, db, STYLE, normalizeNic, hashNic } from "./common.js";
+import { app, db, STYLE, START_NO, normalizeNic, hashNic } from "./common.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut }
   from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { collection, doc, getDoc, onSnapshot, writeBatch }
@@ -106,7 +109,7 @@ async function apply(changes) {
   }
   const items = [...next.entries()].map(([id, a]) => ({ id, ...a }))
     .filter(a => a.status === "waiting").sort((a, b) => a.order - b.order)
-    .map(a => ({ h: a.id, name: a.name }));
+    .map(a => ({ h: a.id, name: a.name, remark: a.remark || "" }));
   batch.set(doc(db, "queue", "list"), { items, updatedAt: Date.now() });
   await batch.commit();
 }
@@ -122,8 +125,8 @@ $("addBtn").onclick = async () => {
   try {
     const h = await hashNic(nic);
     if (applicants.has(h)) { flash($("addMsg"), "මෙම NIC අංකය දැනටමත් පද්ධතියේ ඇත.", "err"); return; }
-    await apply([{ id: h, data: { nic, name, phone: $("newPhone").value.trim(), status: "waiting", order: Date.now(), addedAt: Date.now() } }]);
-    $("newNic").value = $("newName").value = $("newPhone").value = "";
+    await apply([{ id: h, data: { nic, name, position: $("newPosition").value.trim(), phone: $("newPhone").value.trim(), remark: $("newRemark").value.trim(), status: "waiting", order: Date.now(), addedAt: Date.now() } }]);
+    $("newNic").value = $("newName").value = $("newPosition").value = $("newPhone").value = $("newRemark").value = "";
     flash($("addMsg"), "ලේඛනයට එකතු කළා.", "ok");
   } catch (e) { console.error(e); flash($("addMsg"), "එකතු කිරීමට නොහැකි විය.", "err"); }
   finally { $("addBtn").disabled = false; }
@@ -140,6 +143,20 @@ const fmt = ts => ts ? new Date(ts).toLocaleDateString("si-LK") : "";
 
 function btn(text, cls, fn) { const b = document.createElement("button"); b.textContent = text; b.className = "small " + cls; b.onclick = fn; return b; }
 
+// ලැයිස්තුවේම රිමාක් එක ලියා Enter ඔබන්න / පිටතට click කරන්න
+function remarkCell(r, a) {
+  const c = r.insertCell();
+  const inp = document.createElement("input");
+  inp.value = a.remark || ""; inp.placeholder = "රිමාක්..."; inp.style.margin = "0"; inp.style.minWidth = "180px";
+  inp.addEventListener("change", async () => {
+    inp.disabled = true;
+    try { await apply([{ id: a.id, data: { remark: inp.value.trim() } }]); }
+    catch (e) { console.error(e); flash($("listMsg"), "රිමාක් එක සුරැකීමට නොහැකි විය.", "err"); }
+    finally { inp.disabled = false; }
+  });
+  c.appendChild(inp);
+}
+
 function render() {
   const all = [...applicants.entries()].map(([id, a]) => ({ id, ...a }));
   const by = s => all.filter(a => a.status === s);
@@ -150,7 +167,7 @@ function render() {
   rows.sort(tab === "waiting" ? (a, b) => a.order - b.order : (a, b) => (b.loanDate || 0) - (a.loanDate || 0));
 
   const t = $("tbl"); t.innerHTML = "";
-  const head = tab === "waiting" ? ["#", "නම", "NIC", "දුරකථන", ""] : tab === "loaned" ? ["නම", "NIC", "ණය දුන් දිනය", ""] : ["නම", "NIC", "ණය දුන් දිනය", "ගෙව් දිනය"];
+  const head = tab === "waiting" ? ["#", "නම", "තනතුර", "NIC", "දුරකථන", "රිමාක් (පොදුවේ පෙනේ)", ""] : tab === "loaned" ? ["නම", "තනතුර", "NIC", "ණය දුන් දිනය", "රිමාක්", ""] : ["නම", "තනතුර", "NIC", "ණය දුන් දිනය", "ගෙව් දිනය", "රිමාක්"];
   const tr = document.createElement("tr"); head.forEach(h => { const th = document.createElement("th"); th.textContent = h; tr.appendChild(th); }); t.appendChild(tr);
 
   if (!rows.length) { const r = t.insertRow(); const c = r.insertCell(); c.colSpan = head.length; c.className = "muted"; c.textContent = "ඇතුළත් කිරීම් නැත."; return; }
@@ -159,21 +176,30 @@ function render() {
     const r = t.insertRow();
     const cell = v => { const c = r.insertCell(); c.textContent = v ?? ""; return c; };
     if (tab === "waiting") {
-      cell(i + 1); cell(a.name); cell(a.nic); cell(a.phone);
+      cell(START_NO + i); cell(a.name); cell(a.position); cell(a.nic); cell(a.phone); remarkCell(r, a);
       const c = r.insertCell(); const w = document.createElement("div"); w.className = "row-actions";
       w.append(
         btn("ණය දුන්නා", "", () => apply([{ id: a.id, data: { status: "loaned", loanDate: Date.now() } }])),
+        btn("සංස්කරණය", "sec", () => editApplicant(a)),
         btn("මකන්න", "warn", () => { if (confirm(a.name + " ලේඛනයෙන් සම්පූර්ණයෙන් ඉවත් කරන්නද?")) apply([{ id: a.id, data: null }]); }));
       c.appendChild(w);
     } else if (tab === "loaned") {
-      cell(a.name); cell(a.nic); cell(fmt(a.loanDate));
+      cell(a.name); cell(a.position); cell(a.nic); cell(fmt(a.loanDate)); remarkCell(r, a);
       const c = r.insertCell(); const w = document.createElement("div"); w.className = "row-actions";
       w.append(btn("ගෙවා අවසන්", "", () => apply([{ id: a.id, data: { status: "repaid", repaidDate: Date.now() } }])));
       c.appendChild(w);
     } else {
-      cell(a.name); cell(a.nic); cell(fmt(a.loanDate)); cell(fmt(a.repaidDate));
+      cell(a.name); cell(a.position); cell(a.nic); cell(fmt(a.loanDate)); cell(fmt(a.repaidDate)); remarkCell(r, a);
     }
   });
+}
+
+function editApplicant(a) {
+  const p = prompt("තනතුර:", a.position || "");
+  if (p === null) return;
+  const r = prompt("ප්‍රමුඛතා රිමාක් (පොදු පිටුවේත් පෙනේ). හිස්ව තැබුවහොත් ඉවත් වේ:", a.remark || "");
+  if (r === null) return;
+  apply([{ id: a.id, data: { position: p.trim(), remark: r.trim() } }]).catch(e => { console.error(e); flash($("listMsg"), "සුරැකීමට නොහැකි විය.", "err"); });
 }
 
 $("bulkBtn").onclick = async () => {
