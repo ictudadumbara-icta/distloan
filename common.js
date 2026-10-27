@@ -10,6 +10,9 @@ const firebaseConfig = {
   appId: "1:1031093333182:web:89e26737e873bad8ce82ef"
 };
 
+// පොරොත්තු ලේඛනයේ පළමු අයගේ අංකය (වෙනස් කිරීමට මෙම අගය වෙනස් කරන්න)
+export const START_NO = 335;
+
 export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
