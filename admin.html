@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="si">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ආපදා ණය - පරිපාලක</title>
+<style id="st"></style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+<header>
+  <h1>ආපදා ණය - පරිපාලක පුවරුව</h1>
+  <p>උඩදුම්බර ප්‍රාදේශීය ලේකම් කාර්යාලය</p>
+</header>
+<main>
+  <!-- ලොගින් -->
+  <div id="loginBox" class="card hidden">
+    <b>පරිපාලක ලොගින්</b>
+    <input id="email" type="email" placeholder="ඊමේල්" autocomplete="username">
+    <input id="pass" type="password" placeholder="මුරපදය" autocomplete="current-password">
+    <button id="loginBtn">ඇතුල් වන්න</button>
+    <div id="loginMsg"></div>
+  </div>
+
+  <!-- පරිපාලක පුවරුව -->
+  <div id="app" class="hidden">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <b>අලුත් අයෙකු ලේඛනයට එකතු කරන්න</b>
+        <span><button class="sec small" id="qrBtn">QR කේතය</button> <button class="sec small" id="logout">ඉවත් වන්න</button></span>
+      </div>
+      <input id="newNic" placeholder="NIC අංකය" autocomplete="off">
+      <input id="newName" placeholder="සම්පූර්ණ නම" autocomplete="off">
+      <input id="newPhone" placeholder="දුරකථන (අවශ්‍ය නම්)" autocomplete="off">
+      <button id="addBtn">එකතු කරන්න</button>
+      <div id="addMsg"></div>
+      <div id="qrBox" class="hidden" style="margin-top:14px;text-align:center">
+        <div id="qr" style="display:inline-block"></div>
+        <p class="muted" id="qrUrl"></p>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button data-tab="waiting" class="on">පොරොත්තු ලේඛනය (<span id="cW">0</span>)</button>
+      <button data-tab="loaned">ණය ලබා ඇත (<span id="cL">0</span>)</button>
+      <button data-tab="repaid">ගෙවූ ණය (<span id="cR">0</span>)</button>
+    </div>
+
+    <div class="card">
+      <div id="bulk" style="margin-bottom:12px">
+        උඩම <input id="bulkN" type="number" min="1" value="1" style="width:70px;display:inline-block;margin:0 6px"> දෙනාට
+        <button id="bulkBtn" class="small">ණය දුන්නා ලෙස සලකුණු කරන්න</button>
+      </div>
+      <div style="overflow-x:auto"><table id="tbl"></table></div>
+      <div id="listMsg"></div>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+import { app, db, STYLE, normalizeNic, hashNic } from "./common.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut }
+  from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { collection, doc, getDoc, onSnapshot, writeBatch }
+  from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+document.getElementById("st").textContent = STYLE;
+
+const $ = id => document.getElementById(id);
+const auth = getAuth(app);
+let applicants = new Map();
+let tab = "waiting";
+let unsub = null;
+
+const flash = (el, text, cls) => { el.innerHTML = ""; if (text) { const d = document.createElement("div"); d.className = "msg " + cls; d.textContent = text; el.appendChild(d); } };
+
+// ---------- ලොගින් ----------
+$("loginBtn").onclick = async () => {
+  flash($("loginMsg"), "", "");
+  try { await signInWithEmailAndPassword(auth, $("email").value.trim(), $("pass").value); }
+  catch (e) { flash($("loginMsg"), "ඊමේල් හෝ මුරපදය වැරදියි.", "err"); }
+};
+$("pass").addEventListener("keydown", e => { if (e.key === "Enter") $("loginBtn").click(); });
+$("logout").onclick = () => signOut(auth);
+
+onAuthStateChanged(auth, user => {
+  if (user) {
+    $("loginBox").classList.add("hidden"); $("app").classList.remove("hidden");
+    unsub = onSnapshot(collection(db, "applicants"),
+      snap => { applicants = new Map(snap.docs.map(d => [d.id, d.data()])); render(); },
+      err => flash($("listMsg"), "දත්ත කියවීමට අවසර නැත. (ඔබේ ඊමේල් එක Firestore rules හි පරිපාලක ලෙස ඇතුළත් කර තිබේද?)", "err"));
+  } else {
+    if (unsub) { unsub(); unsub = null; }
+    applicants = new Map();
+    $("app").classList.add("hidden"); $("loginBox").classList.remove("hidden");
+  }
+});
+
+// ---------- දත්ත වෙනස් කිරීම (ප්‍රධාන දත්ත + පොදු ලිස්ට් එක එකවර) ----------
+async function apply(changes) {
+  const next = new Map(applicants);
+  const batch = writeBatch(db);
+  for (const c of changes) {
+    const ref = doc(db, "applicants", c.id);
+    if (c.data === null) { batch.delete(ref); next.delete(c.id); }
+    else { batch.set(ref, c.data, { merge: true }); next.set(c.id, { ...(next.get(c.id) || {}), ...c.data }); }
+  }
+  const items = [...next.entries()].map(([id, a]) => ({ id, ...a }))
+    .filter(a => a.status === "waiting").sort((a, b) => a.order - b.order)
+    .map(a => ({ h: a.id, name: a.name }));
+  batch.set(doc(db, "queue", "list"), { items, updatedAt: Date.now() });
+  await batch.commit();
+}
+
+// ---------- එකතු කිරීම ----------
+$("addBtn").onclick = async () => {
+  flash($("addMsg"), "", "");
+  const nic = normalizeNic($("newNic").value);
+  const name = $("newName").value.trim();
+  if (!nic) return flash($("addMsg"), "NIC අංකය වැරදියි.", "err");
+  if (!name) return flash($("addMsg"), "නම ඇතුළත් කරන්න.", "err");
+  $("addBtn").disabled = true;
+  try {
+    const h = await hashNic(nic);
+    if (applicants.has(h)) { flash($("addMsg"), "මෙම NIC අංකය දැනටමත් පද්ධතියේ ඇත.", "err"); return; }
+    await apply([{ id: h, data: { nic, name, phone: $("newPhone").value.trim(), status: "waiting", order: Date.now(), addedAt: Date.now() } }]);
+    $("newNic").value = $("newName").value = $("newPhone").value = "";
+    flash($("addMsg"), "ලේඛනයට එකතු කළා.", "ok");
+  } catch (e) { console.error(e); flash($("addMsg"), "එකතු කිරීමට නොහැකි විය.", "err"); }
+  finally { $("addBtn").disabled = false; }
+};
+
+// ---------- ලැයිස්තුව පෙන්වීම ----------
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+  tab = b.dataset.tab;
+  document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b));
+  render();
+});
+
+const fmt = ts => ts ? new Date(ts).toLocaleDateString("si-LK") : "";
+
+function btn(text, cls, fn) { const b = document.createElement("button"); b.textContent = text; b.className = "small " + cls; b.onclick = fn; return b; }
+
+function render() {
+  const all = [...applicants.entries()].map(([id, a]) => ({ id, ...a }));
+  const by = s => all.filter(a => a.status === s);
+  $("cW").textContent = by("waiting").length; $("cL").textContent = by("loaned").length; $("cR").textContent = by("repaid").length;
+  $("bulk").classList.toggle("hidden", tab !== "waiting");
+
+  let rows = by(tab);
+  rows.sort(tab === "waiting" ? (a, b) => a.order - b.order : (a, b) => (b.loanDate || 0) - (a.loanDate || 0));
+
+  const t = $("tbl"); t.innerHTML = "";
+  const head = tab === "waiting" ? ["#", "නම", "NIC", "දුරකථන", ""] : tab === "loaned" ? ["නම", "NIC", "ණය දුන් දිනය", ""] : ["නම", "NIC", "ණය දුන් දිනය", "ගෙව් දිනය"];
+  const tr = document.createElement("tr"); head.forEach(h => { const th = document.createElement("th"); th.textContent = h; tr.appendChild(th); }); t.appendChild(tr);
+
+  if (!rows.length) { const r = t.insertRow(); const c = r.insertCell(); c.colSpan = head.length; c.className = "muted"; c.textContent = "ඇතුළත් කිරීම් නැත."; return; }
+
+  rows.forEach((a, i) => {
+    const r = t.insertRow();
+    const cell = v => { const c = r.insertCell(); c.textContent = v ?? ""; return c; };
+    if (tab === "waiting") {
+      cell(i + 1); cell(a.name); cell(a.nic); cell(a.phone);
+      const c = r.insertCell(); const w = document.createElement("div"); w.className = "row-actions";
+      w.append(
+        btn("ණය දුන්නා", "", () => apply([{ id: a.id, data: { status: "loaned", loanDate: Date.now() } }])),
+        btn("මකන්න", "warn", () => { if (confirm(a.name + " ලේඛනයෙන් සම්පූර්ණයෙන් ඉවත් කරන්නද?")) apply([{ id: a.id, data: null }]); }));
+      c.appendChild(w);
+    } else if (tab === "loaned") {
+      cell(a.name); cell(a.nic); cell(fmt(a.loanDate));
+      const c = r.insertCell(); const w = document.createElement("div"); w.className = "row-actions";
+      w.append(btn("ගෙවා අවසන්", "", () => apply([{ id: a.id, data: { status: "repaid", repaidDate: Date.now() } }])));
+      c.appendChild(w);
+    } else {
+      cell(a.name); cell(a.nic); cell(fmt(a.loanDate)); cell(fmt(a.repaidDate));
+    }
+  });
+}
+
+$("bulkBtn").onclick = async () => {
+  const n = Math.max(1, parseInt($("bulkN").value) || 1);
+  const top = [...applicants.entries()].map(([id, a]) => ({ id, ...a })).filter(a => a.status === "waiting").sort((a, b) => a.order - b.order).slice(0, n);
+  if (!top.length) return;
+  if (!confirm("උඩම " + top.length + " දෙනාට ණය දුන්නා ලෙස සලකුණු කරන්නද?\n\n" + top.map(a => a.name).join("\n"))) return;
+  const now = Date.now();
+  await apply(top.map(a => ({ id: a.id, data: { status: "loaned", loanDate: now } })));
+};
+
+// ---------- QR කේතය ----------
+$("qrBtn").onclick = () => {
+  const box = $("qrBox");
+  if (!box.classList.contains("hidden")) { box.classList.add("hidden"); return; }
+  const url = new URL("index.html", location.href).href;
+  $("qr").innerHTML = ""; new QRCode($("qr"), { text: url, width: 200, height: 200 });
+  $("qrUrl").textContent = url; box.classList.remove("hidden");
+};
+</script>
+</body>
+</html>

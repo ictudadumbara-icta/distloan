@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="si">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ආපදා ණය - පොරොත්තු ලේඛනය</title>
+<style id="st"></style>
+</head>
+<body>
+<header>
+  <h1>ආපදා ණය පොරොත්තු ලේඛනය</h1>
+  <p>උඩදුම්බර ප්‍රාදේශීය ලේකම් කාර්යාලය</p>
+</header>
+<main>
+  <div class="card">
+    <label for="nic"><b>ඔබේ ජාතික හැඳුනුම්පත් අංකය (NIC)</b></label>
+    <input id="nic" inputmode="text" autocomplete="off" placeholder="උදා: 912345678V හෝ 199123405678">
+    <button id="go">පරීක්ෂා කරන්න</button>
+    <div id="msg"></div>
+  </div>
+  <div id="result" class="card hidden"></div>
+</main>
+<script type="module">
+import { db, STYLE, normalizeNic, hashNic } from "./common.js";
+import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+document.getElementById("st").textContent = STYLE;
+
+const $ = id => document.getElementById(id);
+const showMsg = (t, cls) => { $("msg").innerHTML = ""; if (t) { const d = document.createElement("div"); d.className = "msg " + cls; d.textContent = t; $("msg").appendChild(d); } };
+
+async function check() {
+  $("result").classList.add("hidden");
+  showMsg("", "");
+  const nic = normalizeNic($("nic").value);
+  if (!nic) return showMsg("NIC අංකය වැරදියි. නැවත පරීක්ෂා කර ඇතුළත් කරන්න.", "err");
+  $("go").disabled = true; $("go").textContent = "පරීක්ෂා කරමින්...";
+  try {
+    const h = await hashNic(nic);
+    const snap = await getDoc(doc(db, "queue", "list"));
+    const items = snap.exists() ? (snap.data().items || []) : [];
+    const idx = items.findIndex(i => i.h === h);
+    const r = $("result");
+    r.innerHTML = "";
+    if (idx === -1) {
+      r.innerHTML = "<p>මෙම NIC අංකය වර්තමාන පොරොත්තු ලේඛනයේ නොමැත.</p><p class='muted'>ඔබ තවමත් ලේඛනයට ඇතුළත් කර නැත්නම්, හෝ ණය ලබා දී ඇත්නම් මෙසේ පෙනේ. වැඩි විස්තර සඳහා ප්‍රාදේශීය ලේකම් කාර්යාලය අමතන්න.</p>";
+    } else {
+      const pos = idx + 1;
+      r.innerHTML = `<p class="muted" style="margin:0">ඔබේ ස්ථානය</p><p class="big">${pos}</p><p>මුළු පොරොත්තු ලේඛනයේ ${items.length} දෙනෙකු අතරින්.</p>`;
+      if (idx === 0) {
+        const p = document.createElement("p"); p.textContent = "ඔබ ලේඛනයේ පළමු ස්ථානයේ සිටී."; r.appendChild(p);
+      } else {
+        const t = document.createElement("p"); t.innerHTML = `<b>ඔබට ඉදිරියෙන් සිටින ${idx} දෙනා:</b>`; r.appendChild(t);
+        const ol = document.createElement("ol"); ol.className = "names";
+        items.slice(0, idx).forEach(i => { const li = document.createElement("li"); li.textContent = i.name; ol.appendChild(li); });
+        r.appendChild(ol);
+      }
+    }
+    r.classList.remove("hidden");
+  } catch (e) {
+    console.error(e);
+    showMsg("දත්ත ලබා ගැනීමට නොහැකි විය. පසුව නැවත උත්සාහ කරන්න.", "err");
+  } finally {
+    $("go").disabled = false; $("go").textContent = "පරීක්ෂා කරන්න";
+  }
+}
+$("go").onclick = check;
+$("nic").addEventListener("keydown", e => { if (e.key === "Enter") check(); });
+</script>
+</body>
+</html>
