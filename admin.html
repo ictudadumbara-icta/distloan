@@ -126,7 +126,8 @@ async function apply(changes) {
 // ---------- එකතු කිරීම ----------
 $("addBtn").onclick = async () => {
   flash($("addMsg"), "", "");
-  const nic = normalizeNic($("newNic").value);
+  const nic = normalizeNic($("newNic").value);               // හැඳුනුම පරීක්ෂාවට/hash කිරීමට පමණි
+  const shownNic = $("newNic").value.trim().toUpperCase().replace(/\s+/g, ""); // ලැයිස්තුවේ පෙන්වන්නේ ඇතුළත් කළ ආකාරයෙන්ම
   const name = $("newName").value.trim();
   if (!nic) return flash($("addMsg"), "NIC අංකය වැරදියි.", "err");
   if (!name) return flash($("addMsg"), "නම ඇතුළත් කරන්න.", "err");
@@ -134,7 +135,7 @@ $("addBtn").onclick = async () => {
   try {
     const h = await hashNic(nic);
     if (applicants.has(h)) { flash($("addMsg"), "මෙම NIC අංකය දැනටමත් පද්ධතියේ ඇත.", "err"); return; }
-    await apply([{ id: h, data: { nic, name, position: $("newPosition").value.trim(), phone: $("newPhone").value.trim(), remark: $("newRemark").value.trim(), status: "waiting", order: Date.now(), addedAt: Date.now() } }]);
+    await apply([{ id: h, data: { nic: shownNic, name, position: $("newPosition").value.trim(), phone: $("newPhone").value.trim(), remark: $("newRemark").value.trim(), status: "waiting", order: Date.now(), addedAt: Date.now() } }]);
     $("newNic").value = $("newName").value = $("newPosition").value = $("newPhone").value = $("newRemark").value = "";
     flash($("addMsg"), "ලේඛනයට එකතු කළා.", "ok");
   } catch (e) { console.error(e); flash($("addMsg"), "එකතු කිරීමට නොහැකි විය.", "err"); }
