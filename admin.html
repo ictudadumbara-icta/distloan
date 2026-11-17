@@ -127,7 +127,10 @@ async function apply(changes) {
     .map(a => ({ h: a.id, name: a.name, remark: a.remark || "", no: a.no ?? null }));
   const maxNo = Math.max(counter - 1, ...[...next.values()].map(a => a.no || 0));
   counter = maxNo + 1;
-  batch.set(doc(db, "queue", "list"), { items, nextNo: counter, updatedAt: Date.now() });
+  // ණය ලබාගත්/ගෙවා අවසන් අය (අංකයක් ඇති) - පොදු පිටුවේ ඔවුන්ගේ අංකය, නම, රිමාක් පෙන්වීමට
+  const done = [...next.values()].filter(a => (a.status === "loaned" || a.status === "repaid") && a.no != null)
+    .sort((x, y) => x.no - y.no).map(a => ({ no: a.no, name: a.name, remark: a.remark || "", st: a.status }));
+  batch.set(doc(db, "queue", "list"), { items, done, nextNo: counter, updatedAt: Date.now() });
   await batch.commit();
   applicants = next;
 }
