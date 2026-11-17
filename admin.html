@@ -177,7 +177,7 @@ function render() {
   rows.sort(tab === "waiting" ? (a, b) => a.order - b.order : (a, b) => (b.loanDate || 0) - (a.loanDate || 0));
 
   const t = $("tbl"); t.innerHTML = "";
-  const head = tab === "waiting" ? ["#", "නම", "තනතුර", "NIC", "දුරකථන", "රිමාක් (පොදුවේ පෙනේ)", ""] : tab === "loaned" ? ["නම", "තනතුර", "NIC", "ණය දුන් දිනය", "රිමාක්", ""] : ["නම", "තනතුර", "NIC", "ණය දුන් දිනය", "ගෙව් දිනය", "රිමාක්"];
+  const head = tab === "waiting" ? ["#", "නම", "තනතුර", "NIC", "දුරකථන", "රිමාක් (පොදුවේ පෙනේ)", ""] : tab === "loaned" ? ["නම", "තනතුර", "NIC", "ණය දුන් දිනය", "රිමාක්", ""] : ["නම", "තනතුර", "NIC", "ණය දුන් දිනය", "ගෙව් දිනය", "රිමාක්", ""];
   const tr = document.createElement("tr"); head.forEach(h => { const th = document.createElement("th"); th.textContent = h; tr.appendChild(th); }); t.appendChild(tr);
 
   if (!rows.length) { const r = t.insertRow(); const c = r.insertCell(); c.colSpan = head.length; c.className = "muted"; c.textContent = "ඇතුළත් කිරීම් නැත."; return; }
@@ -196,12 +196,24 @@ function render() {
     } else if (tab === "loaned") {
       cell(a.name); cell(a.position); cell(a.nic); cell(fmt(a.loanDate)); remarkCell(r, a);
       const c = r.insertCell(); const w = document.createElement("div"); w.className = "row-actions";
-      w.append(btn("ගෙවා අවසන්", "", () => apply([{ id: a.id, data: { status: "repaid", repaidDate: Date.now() } }])));
+      w.append(
+        btn("ගෙවා අවසන්", "", () => apply([{ id: a.id, data: { status: "repaid", repaidDate: Date.now() } }])),
+        btn("පොරොත්තු ලේඛනයට ආපසු", "sec", () => backToWaiting(a)));
       c.appendChild(w);
     } else {
       cell(a.name); cell(a.position); cell(a.nic); cell(fmt(a.loanDate)); cell(fmt(a.repaidDate)); remarkCell(r, a);
+      const c = r.insertCell(); const w = document.createElement("div"); w.className = "row-actions";
+      w.append(btn("පොරොත්තු ලේඛනයට ආපසු", "sec", () => backToWaiting(a)));
+      c.appendChild(w);
     }
   });
+}
+
+// වැරදීමකින් "ණය දුන්නා" / "ගෙවා අවසන්" කළ අයෙක් නැවත පොරොත්තු ලේඛනයට (කලින් හිටි ස්ථානයටම) දමයි
+function backToWaiting(a) {
+  if (!confirm(a.name + " නැවත පොරොත්තු ලේඛනයට දමන්නද?\n(කලින් ලේඛනයේ හිටි ස්ථානයටම යයි)")) return;
+  apply([{ id: a.id, data: { status: "waiting", loanDate: null, repaidDate: null } }])
+    .catch(e => { console.error(e); flash($("listMsg"), "ආපසු දැමීමට නොහැකි විය.", "err"); });
 }
 
 function editApplicant(a) {
