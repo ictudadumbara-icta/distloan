@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ආපදා ණය - පොරොත්තු ලේඛනය</title>
 <style id="st"></style>
+<style>.tag{display:inline-block;background:#dcfce7;color:#14532d;border-radius:6px;padding:0 8px;font-size:.8rem;margin-left:8px}</style>
 </head>
 <body>
 <header>
@@ -38,6 +39,7 @@ async function check() {
     const h = await hashNic(nic);
     const snap = await getDoc(doc(db, "queue", "list"));
     const items = snap.exists() ? (snap.data().items || []) : [];
+    const done = snap.exists() ? (snap.data().done || []) : [];
     const idx = items.findIndex(i => i.h === h);
     const r = $("result");
     r.innerHTML = "";
@@ -49,12 +51,23 @@ async function check() {
       if (items[idx].remark) {
         const rm = document.createElement("p"); rm.className = "msg ok"; rm.textContent = "රිමාක්: " + items[idx].remark; r.appendChild(rm);
       }
-      if (idx === 0) {
+      const ahead = [
+        ...items.slice(0, idx).map((i, k) => ({ no: i.no ?? (START_NO + k), name: i.name, remark: i.remark, st: "waiting" })),
+        ...done.filter(d => d.no < pos)
+      ].sort((x, y) => x.no - y.no);
+      if (!ahead.length) {
         const p = document.createElement("p"); p.textContent = "ඔබ ලේඛනයේ පළමු ස්ථානයේ සිටී."; r.appendChild(p);
       } else {
-        const t = document.createElement("p"); t.innerHTML = `<b>ඔබට ඉදිරියෙන් සිටින ${idx} දෙනා:</b>`; r.appendChild(t);
+        const t = document.createElement("p");
+        t.innerHTML = `<b>ඔබට ඉදිරියෙන් ඇති අංක</b> <span class="muted">(ලේඛනයේ තවමත් සිටින්නේ ${idx} දෙනෙකි. ණය ලබාගත් අයද පහත දැක්වේ.)</span>`;
+        r.appendChild(t);
         const ol = document.createElement("ol"); ol.className = "names";
-        items.slice(0, idx).forEach((i, k) => { const li = document.createElement("li"); li.value = i.no ?? (START_NO + k); li.textContent = i.name; if (i.remark) { const s = document.createElement("span"); s.className = "muted"; s.textContent = " — " + i.remark; li.appendChild(s); } ol.appendChild(li); });
+        ahead.forEach(i => {
+          const li = document.createElement("li"); li.value = i.no; li.appendChild(document.createTextNode(i.name));
+          if (i.st !== "waiting") { const g = document.createElement("span"); g.className = "tag"; g.textContent = i.st === "repaid" ? "ණය ගෙවා අවසන්" : "ණය ලබා ඇත"; li.appendChild(g); }
+          if (i.remark) { const s = document.createElement("span"); s.className = "muted"; s.textContent = " — " + i.remark; li.appendChild(s); }
+          ol.appendChild(li);
+        });
         r.appendChild(ol);
       }
     }
