@@ -59,7 +59,7 @@ async function check() {
         const p = document.createElement("p"); p.textContent = "ඔබ ලේඛනයේ පළමු ස්ථානයේ සිටී."; r.appendChild(p);
       } else {
         const t = document.createElement("p");
-        t.innerHTML = `<b>ඔබට ඉදිරියෙන් ඇති අංක</b> <span class="muted">(ලේඛනයේ තවමත් සිටින්නේ ${idx} දෙනෙකි. ණය ලබාගත් අයද පහත දැක්වේ.)</span>`;
+        t.innerHTML = `<b>ඔබට ඉදිරියෙන් ඇති අංක</b> <span class="muted">(ලේඛනයේ තවමත් සිටින්නේ ${idx} දෙනෙකි.)</span>`;
         r.appendChild(t);
         const ol = document.createElement("ol"); ol.className = "names";
         ahead.forEach(i => {
