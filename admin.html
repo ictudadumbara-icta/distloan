@@ -165,6 +165,14 @@ const fmt = ts => ts ? new Date(ts).toLocaleDateString("si-LK") : "";
 
 function btn(text, cls, fn) { const b = document.createElement("button"); b.textContent = text; b.className = "small " + cls; b.onclick = fn; return b; }
 
+// ණය ලබාගත්/ගෙවූ අයට අංකයක් නැත්නම් පොදු ලැයිස්තුවේ නොපෙනේ - රතු පාටින් සඳහන් කරයි
+function noCell(r, a) {
+  const c = r.insertCell();
+  if (a.no != null) { c.textContent = a.no; return; }
+  c.textContent = "අංකයක් නැත (පොදුවේ නොපෙනේ) - සංස්කරණය ඔබා අංකයක් දෙන්න";
+  c.style.color = "#b91c1c"; c.style.fontSize = ".85rem"; c.style.minWidth = "150px";
+}
+
 // ලැයිස්තුවේම රිමාක් එක ලියා Enter ඔබන්න / පිටතට click කරන්න
 function remarkCell(r, a) {
   const c = r.insertCell();
@@ -206,16 +214,17 @@ function render() {
         btn("මකන්න", "warn", () => { if (confirm(a.name + " ලේඛනයෙන් සම්පූර්ණයෙන් ඉවත් කරන්නද?")) apply([{ id: a.id, data: null }]); }));
       c.appendChild(w);
     } else if (tab === "loaned") {
-      cell(a.no ?? ""); cell(a.name); cell(a.position); cell(a.nic); cell(fmt(a.loanDate)); remarkCell(r, a);
+      noCell(r, a); cell(a.name); cell(a.position); cell(a.nic); cell(fmt(a.loanDate)); remarkCell(r, a);
       const c = r.insertCell(); const w = document.createElement("div"); w.className = "row-actions";
       w.append(
         btn("ගෙවා අවසන්", "", () => apply([{ id: a.id, data: { status: "repaid", repaidDate: Date.now() } }])),
+        btn("සංස්කරණය", "sec", () => editApplicant(a)),
         btn("පොරොත්තු ලේඛනයට ආපසු", "sec", () => backToWaiting(a)));
       c.appendChild(w);
     } else {
-      cell(a.no ?? ""); cell(a.name); cell(a.position); cell(a.nic); cell(fmt(a.loanDate)); cell(fmt(a.repaidDate)); remarkCell(r, a);
+      noCell(r, a); cell(a.name); cell(a.position); cell(a.nic); cell(fmt(a.loanDate)); cell(fmt(a.repaidDate)); remarkCell(r, a);
       const c = r.insertCell(); const w = document.createElement("div"); w.className = "row-actions";
-      w.append(btn("පොරොත්තු ලේඛනයට ආපසු", "sec", () => backToWaiting(a)));
+      w.append(btn("සංස්කරණය", "sec", () => editApplicant(a)), btn("පොරොත්තු ලේඛනයට ආපසු", "sec", () => backToWaiting(a)));
       c.appendChild(w);
     }
   });
