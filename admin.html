@@ -81,7 +81,11 @@ const $ = id => document.getElementById(id);
 const auth = getAuth(app);
 let applicants = new Map();
 let tab = "waiting";
-let unsub = null;
+let unsub = null, unsub2 = null;
+let counter = START_NO;   // ඊළඟට දිය යුතු ස්ථිර අංකය
+let migrating = false;
+const byNo = (a, b) => (a.no ?? 1e9) - (b.no ?? 1e9) || (a.order || 0) - (b.order || 0);
+const noTaken = (no, exceptId) => [...applicants.entries()].some(([id, a]) => id !== exceptId && a.no === no);
 
 const flash = (el, text, cls) => { el.innerHTML = ""; if (text) { const d = document.createElement("div"); d.className = "msg " + cls; d.textContent = text; el.appendChild(d); } };
 
@@ -97,11 +101,13 @@ $("logout").onclick = () => signOut(auth);
 onAuthStateChanged(auth, user => {
   if (user) {
     $("loginBox").classList.add("hidden"); $("app").classList.remove("hidden");
+    unsub2 = onSnapshot(doc(db, "queue", "list"), s => { if (s.exists() && s.data().nextNo) counter = Math.max(counter, s.data().nextNo); }, () => {});
     unsub = onSnapshot(collection(db, "applicants"),
-      snap => { applicants = new Map(snap.docs.map(d => [d.id, d.data()])); render(); },
+      snap => { applicants = new Map(snap.docs.map(d => [d.id, d.data()])); render(); migrateNumbers(); },
       err => flash($("listMsg"), "දත්ත කියවීමට අවසර නැත. (ඔබේ ඊමේල් එක Firestore rules හි පරිපාලක ලෙස ඇතුළත් කර තිබේද?)", "err"));
   } else {
     if (unsub) { unsub(); unsub = null; }
+    if (unsub2) { unsub2(); unsub2 = null; }
     applicants = new Map();
     $("app").classList.add("hidden"); $("loginBox").classList.remove("hidden");
   }
@@ -117,10 +123,13 @@ async function apply(changes) {
     else { batch.set(ref, c.data, { merge: true }); next.set(c.id, { ...(next.get(c.id) || {}), ...c.data }); }
   }
   const items = [...next.entries()].map(([id, a]) => ({ id, ...a }))
-    .filter(a => a.status === "waiting").sort((a, b) => a.order - b.order)
-    .map(a => ({ h: a.id, name: a.name, remark: a.remark || "" }));
-  batch.set(doc(db, "queue", "list"), { items, updatedAt: Date.now() });
+    .filter(a => a.status === "waiting").sort(byNo)
+    .map(a => ({ h: a.id, name: a.name, remark: a.remark || "", no: a.no ?? null }));
+  const maxNo = Math.max(counter - 1, ...[...next.values()].map(a => a.no || 0));
+  counter = maxNo + 1;
+  batch.set(doc(db, "queue", "list"), { items, nextNo: counter, updatedAt: Date.now() });
   await batch.commit();
+  applicants = next;
 }
 
 // ---------- එකතු කිරීම ----------
@@ -135,7 +144,7 @@ $("addBtn").onclick = async () => {
   try {
     const h = await hashNic(nic);
     if (applicants.has(h)) { flash($("addMsg"), "මෙම NIC අංකය දැනටමත් පද්ධතියේ ඇත.", "err"); return; }
-    await apply([{ id: h, data: { nic: shownNic, name, position: $("newPosition").value.trim(), phone: $("newPhone").value.trim(), remark: $("newRemark").value.trim(), status: "waiting", order: Date.now(), addedAt: Date.now() } }]);
+    await apply([{ id: h, data: { nic: shownNic, name, no: Math.max(counter, START_NO, ...[...applicants.values()].map(a => (a.no || 0) + 1)), position: $("newPosition").value.trim(), phone: $("newPhone").value.trim(), remark: $("newRemark").value.trim(), status: "waiting", order: Date.now(), addedAt: Date.now() } }]);
     $("newNic").value = $("newName").value = $("newPosition").value = $("newPhone").value = $("newRemark").value = "";
     flash($("addMsg"), "ලේඛනයට එකතු කළා.", "ok");
   } catch (e) { console.error(e); flash($("addMsg"), "එකතු කිරීමට නොහැකි විය.", "err"); }
@@ -174,10 +183,10 @@ function render() {
   $("bulk").classList.toggle("hidden", tab !== "waiting");
 
   let rows = by(tab);
-  rows.sort(tab === "waiting" ? (a, b) => a.order - b.order : (a, b) => (b.loanDate || 0) - (a.loanDate || 0));
+  rows.sort(tab === "waiting" ? byNo : (a, b) => (b.loanDate || 0) - (a.loanDate || 0));
 
   const t = $("tbl"); t.innerHTML = "";
-  const head = tab === "waiting" ? ["#", "නම", "තනතුර", "NIC", "දුරකථන", "රිමාක් (පොදුවේ පෙනේ)", ""] : tab === "loaned" ? ["නම", "තනතුර", "NIC", "ණය දුන් දිනය", "රිමාක්", ""] : ["නම", "තනතුර", "NIC", "ණය දුන් දිනය", "ගෙව් දිනය", "රිමාක්", ""];
+  const head = tab === "waiting" ? ["#", "නම", "තනතුර", "NIC", "දුරකථන", "රිමාක් (පොදුවේ පෙනේ)", ""] : tab === "loaned" ? ["අංකය", "නම", "තනතුර", "NIC", "ණය දුන් දිනය", "රිමාක්", ""] : ["අංකය", "නම", "තනතුර", "NIC", "ණය දුන් දිනය", "ගෙව් දිනය", "රිමාක්", ""];
   const tr = document.createElement("tr"); head.forEach(h => { const th = document.createElement("th"); th.textContent = h; tr.appendChild(th); }); t.appendChild(tr);
 
   if (!rows.length) { const r = t.insertRow(); const c = r.insertCell(); c.colSpan = head.length; c.className = "muted"; c.textContent = "ඇතුළත් කිරීම් නැත."; return; }
@@ -186,7 +195,7 @@ function render() {
     const r = t.insertRow();
     const cell = v => { const c = r.insertCell(); c.textContent = v ?? ""; return c; };
     if (tab === "waiting") {
-      cell(START_NO + i); cell(a.name); cell(a.position); cell(a.nic); cell(a.phone); remarkCell(r, a);
+      cell(a.no ?? ""); cell(a.name); cell(a.position); cell(a.nic); cell(a.phone); remarkCell(r, a);
       const c = r.insertCell(); const w = document.createElement("div"); w.className = "row-actions";
       w.append(
         btn("ණය දුන්නා", "", () => apply([{ id: a.id, data: { status: "loaned", loanDate: Date.now() } }])),
@@ -194,14 +203,14 @@ function render() {
         btn("මකන්න", "warn", () => { if (confirm(a.name + " ලේඛනයෙන් සම්පූර්ණයෙන් ඉවත් කරන්නද?")) apply([{ id: a.id, data: null }]); }));
       c.appendChild(w);
     } else if (tab === "loaned") {
-      cell(a.name); cell(a.position); cell(a.nic); cell(fmt(a.loanDate)); remarkCell(r, a);
+      cell(a.no ?? ""); cell(a.name); cell(a.position); cell(a.nic); cell(fmt(a.loanDate)); remarkCell(r, a);
       const c = r.insertCell(); const w = document.createElement("div"); w.className = "row-actions";
       w.append(
         btn("ගෙවා අවසන්", "", () => apply([{ id: a.id, data: { status: "repaid", repaidDate: Date.now() } }])),
         btn("පොරොත්තු ලේඛනයට ආපසු", "sec", () => backToWaiting(a)));
       c.appendChild(w);
     } else {
-      cell(a.name); cell(a.position); cell(a.nic); cell(fmt(a.loanDate)); cell(fmt(a.repaidDate)); remarkCell(r, a);
+      cell(a.no ?? ""); cell(a.name); cell(a.position); cell(a.nic); cell(fmt(a.loanDate)); cell(fmt(a.repaidDate)); remarkCell(r, a);
       const c = r.insertCell(); const w = document.createElement("div"); w.className = "row-actions";
       w.append(btn("පොරොත්තු ලේඛනයට ආපසු", "sec", () => backToWaiting(a)));
       c.appendChild(w);
@@ -209,24 +218,56 @@ function render() {
   });
 }
 
+// දැනට අංක නැති අයට (පරණ දත්ත) ඇතුළත් කළ පිළිවෙළටම ස්ථිර අංක එක් වරක් ලබා දෙයි
+async function migrateNumbers() {
+  if (migrating) return;
+  const missing = [...applicants.entries()].filter(([, a]) => a.no == null && a.status === "waiting").sort((x, y) => (x[1].order || 0) - (y[1].order || 0));
+  if (!missing.length) return;
+  migrating = true;
+  try {
+    // පොරොත්තු ලේඛනයේ දැනට පෙනෙන අංකයම (335 න් පටන්) ස්ථිර කරයි. ණය ලබා ඇති/ගෙවූ අයට අංක ඉබේ නොදෙයි.
+    const used = new Set([...applicants.values()].map(a => a.no).filter(x => x != null));
+    let n = START_NO; const assign = [];
+    for (const [id] of missing) { while (used.has(n)) n++; assign.push({ id, data: { no: n } }); used.add(n); n++; }
+    for (let i = 0; i < assign.length; i += 400) await apply(assign.slice(i, i + 400));
+  } catch (e) { console.error(e); flash($("listMsg"), "ස්ථිර අංක ලබා දීමට නොහැකි විය. පිටුව refresh කර බලන්න.", "err"); }
+  finally { migrating = false; }
+}
+
 // වැරදීමකින් "ණය දුන්නා" / "ගෙවා අවසන්" කළ අයෙක් නැවත පොරොත්තු ලේඛනයට (කලින් හිටි ස්ථානයටම) දමයි
 function backToWaiting(a) {
-  if (!confirm(a.name + " නැවත පොරොත්තු ලේඛනයට දමන්නද?\n(කලින් ලේඛනයේ හිටි ස්ථානයටම යයි)")) return;
-  apply([{ id: a.id, data: { status: "waiting", loanDate: null, repaidDate: null } }])
+  let no = a.no ?? null;
+  if (no == null) {
+    const s = prompt(a.name + " සඳහා ස්ථිර අංකය ඇතුළත් කරන්න (ලේඛනයේ ස්ථානය තීරණය වන්නේ මෙම අංකයෙනි):");
+    if (s === null) return;
+    no = parseInt(s, 10);
+    if (!Number.isInteger(no) || no < 1) return alert("අංකය වැරදියි.");
+  }
+  if (noTaken(no, a.id)) return alert("අංක " + no + " වෙනත් අයෙකුට දැනටමත් ඇත. 'සංස්කරණය' මගින් අංකය වෙනස් කර නැවත උත්සාහ කරන්න.");
+  if (!confirm(a.name + " නැවත පොරොත්තු ලේඛනයට දමන්නද? (අංකය " + no + ")")) return;
+  apply([{ id: a.id, data: { status: "waiting", no, loanDate: null, repaidDate: null } }])
     .catch(e => { console.error(e); flash($("listMsg"), "ආපසු දැමීමට නොහැකි විය.", "err"); });
 }
 
 function editApplicant(a) {
+  const nStr = prompt("ස්ථිර අංකය (එලෙසම තැබීමට වෙනස් නොකරන්න):", a.no ?? "");
+  if (nStr === null) return;
+  let no = a.no ?? null;
+  if (nStr.trim() !== "") {
+    no = parseInt(nStr, 10);
+    if (!Number.isInteger(no) || no < 1) return alert("අංකය වැරදියි.");
+    if (noTaken(no, a.id)) return alert("මෙම අංකය වෙනත් අයෙකුට දැනටමත් ඇත.");
+  }
   const p = prompt("තනතුර:", a.position || "");
   if (p === null) return;
   const r = prompt("ප්‍රමුඛතා රිමාක් (පොදු පිටුවේත් පෙනේ). හිස්ව තැබුවහොත් ඉවත් වේ:", a.remark || "");
   if (r === null) return;
-  apply([{ id: a.id, data: { position: p.trim(), remark: r.trim() } }]).catch(e => { console.error(e); flash($("listMsg"), "සුරැකීමට නොහැකි විය.", "err"); });
+  apply([{ id: a.id, data: { position: p.trim(), remark: r.trim(), no } }]).catch(e => { console.error(e); flash($("listMsg"), "සුරැකීමට නොහැකි විය.", "err"); });
 }
 
 $("bulkBtn").onclick = async () => {
   const n = Math.max(1, parseInt($("bulkN").value) || 1);
-  const top = [...applicants.entries()].map(([id, a]) => ({ id, ...a })).filter(a => a.status === "waiting").sort((a, b) => a.order - b.order).slice(0, n);
+  const top = [...applicants.entries()].map(([id, a]) => ({ id, ...a })).filter(a => a.status === "waiting").sort(byNo).slice(0, n);
   if (!top.length) return;
   if (!confirm("උඩම " + top.length + " දෙනාට ණය දුන්නා ලෙස සලකුණු කරන්නද?\n\n" + top.map(a => a.name).join("\n"))) return;
   const now = Date.now();
