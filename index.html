@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ආපදා ණය - පොරොත්තු ලේඛනය</title>
 <style id="st"></style>
-<style>.tag{display:inline-block;background:#dcfce7;color:#14532d;border-radius:6px;padding:0 8px;font-size:.8rem;margin-left:8px}</style>
+<style>.rem{color:#9a3412}.tag{display:inline-block;background:#dcfce7;color:#14532d;border-radius:6px;padding:0 8px;font-size:.8rem;margin-left:8px}</style>
 </head>
 <body>
 <header>
@@ -64,8 +64,8 @@ async function check() {
         const ol = document.createElement("ol"); ol.className = "names";
         ahead.forEach(i => {
           const li = document.createElement("li"); li.value = i.no; li.appendChild(document.createTextNode(i.name));
+          if (i.remark) { const s = document.createElement("strong"); s.className = "rem"; s.textContent = " — " + i.remark; li.appendChild(s); }
           if (i.st !== "waiting") { const g = document.createElement("span"); g.className = "tag"; g.textContent = i.st === "repaid" ? "ණය ගෙවා අවසන්" : "ණය ලබා ඇත"; li.appendChild(g); }
-          if (i.remark) { const s = document.createElement("span"); s.className = "muted"; s.textContent = " — " + i.remark; li.appendChild(s); }
           ol.appendChild(li);
         });
         r.appendChild(ol);
